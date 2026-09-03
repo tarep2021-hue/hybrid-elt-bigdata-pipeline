@@ -3,7 +3,7 @@
 app.py — منصة البيانات الضخمة التفاعلية (Enterprise Big Data Dashboard)
 Hybrid ELT Pipeline & PySpark Distributed Analytics Platform
 مقرر البيانات الضخمة (العملي) | جامعة الرازي | إشراف: م. عمر أبو سند
-الطالب: زياد (السنة الرابعة)
+الطالب: طارق (السنة الرابعة)
 """
 
 import os
@@ -228,7 +228,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     
     st.markdown("---")
-    st.markdown("👨‍🏫 **إشراف:** م. عمر أبو سند  \n👨‍🎓 **الطالب:** زياد (السنة الرابعة)")
+    st.markdown("👨‍🏫 **إشراف:** م. عمر أبو سند  \n👨‍🎓 **الطالب:** طارق (السنة الرابعة)")
     
     # شارة حالة MongoDB
     if db is not None:
@@ -331,7 +331,7 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
-    st.markdown("🔗 **المستودع الرسمي للمشروع:**  \n[github.com/ziad0110/big-data-pipeline](https://github.com/ziad0110/big-data-pipeline)")
+    st.markdown("🔗 **المستودع الرسمي للمشروع:**  \n[github.com/tariq0110/big-data-pipeline](https://github.com/tariq0110/big-data-pipeline)")
 
 # ─── الترويسة الرئيسية العلوية ───
 st.markdown("""

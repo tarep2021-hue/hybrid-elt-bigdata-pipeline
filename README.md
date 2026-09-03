@@ -6,7 +6,7 @@
 > **المقرر:** البيانات الضخمة (العملي) — Big Data (Practical)  
 > **الجامعة:** جامعة الرازي — Al-Razi University  
 > **إشراف:** م. عمر أبو سند (Eng. Omar Abu Sanad)  
-> **إعداد الطالب:** زياد (Ziad)  
+> **إعداد الطالب:** طارق (Tariq)  
 
 ---
 
@@ -73,7 +73,7 @@
 
 ### 1. استنساخ أو الانتقال لمجلد المشروع (Clone / Navigate)
 ```bash
-cd "c:\Users\ziad\Desktop\4th year\tkalef\omar abu sanad\تكاليف\مشروع نهائي\midterm-data-pipeline"
+cd "c:\Users\tariq\Desktop\4th year\tkalef\omar abu sanad\تكاليف\مشروع نهائي\midterm-data-pipeline"
 ```
 
 ### 2. إنشاء وتفعيل البيئة الافتراضية (Virtual Environment)
