@@ -46,8 +46,11 @@ def _clean_numeric_field(value: str) -> tuple[float | None, list[dict]]:
         corrected = str(WORD_PRICE_MAP[current])
         corrections.append({
             'rule': 'PRICE_WORDS',
+            'rule_code': 'PRICE_WORDS',
             'original': current,
-            'corrected': corrected
+            'original_value': current,
+            'corrected': corrected,
+            'corrected_value': corrected
         })
         current = corrected
 
@@ -57,8 +60,11 @@ def _clean_numeric_field(value: str) -> tuple[float | None, list[dict]]:
         corrected_arabic = "".join(ARABIC_DIGIT_MAP.get(c, c) for c in current)
         corrections.append({
             'rule': 'ARABIC_NUMERALS',
+            'rule_code': 'ARABIC_NUMERALS',
             'original': current,
-            'corrected': corrected_arabic
+            'original_value': current,
+            'corrected': corrected_arabic,
+            'corrected_value': corrected_arabic
         })
         current = corrected_arabic
 
@@ -67,8 +73,11 @@ def _clean_numeric_field(value: str) -> tuple[float | None, list[dict]]:
         corrected_comma = current.replace(',', '')
         corrections.append({
             'rule': 'THOUSAND_SEPARATOR',
+            'rule_code': 'THOUSAND_SEPARATOR',
             'original': current,
-            'corrected': corrected_comma
+            'original_value': current,
+            'corrected': corrected_comma,
+            'corrected_value': corrected_comma
         })
         current = corrected_comma
 
@@ -130,11 +139,11 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
                     try:
                         qty_num, _ = _clean_numeric_field(str(qty_raw))
                         if qty_num is None or qty_num <= 0:
-                            errors.append({'error_code': 'INVALID_QUANTITY', 'error_detail': f'الكمية [{idx}] سالبة أو صفرية: {qty_raw}', 'field': 'items_json'})
+                            errors.append({'error_code': 'AMBIGUOUS_NEGATIVE_VALUE', 'error_detail': f'الكمية [{idx}] سالبة أو صفرية: {qty_raw}', 'field': 'items_json'})
                             continue
                         item['qty'] = int(qty_num)
                     except Exception:
-                        errors.append({'error_code': 'INVALID_QUANTITY', 'error_detail': f'الكمية [{idx}] غير صالحة: {qty_raw}', 'field': 'items_json'})
+                        errors.append({'error_code': 'AMBIGUOUS_NEGATIVE_VALUE', 'error_detail': f'الكمية [{idx}] غير صالحة: {qty_raw}', 'field': 'items_json'})
                         continue
 
                     # تنظيف والتحقق من سعر الوحدة والإجمالي
@@ -162,6 +171,8 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
             
     # في حال وجود أخطاء عزل مبكرة -> عزل فوري
     if errors:
+        if len(errors) >= 2 and not any(e.get('error_code') == 'MULTIPLE_CONFLICTING_ERRORS' for e in errors):
+            errors.append({'error_code': 'MULTIPLE_CONFLICTING_ERRORS', 'error_detail': 'عدة أخطاء جوهرية تمنع التصحيح الآمن'})
         return ('quarantine', raw_record, errors)
 
     # =========================================================================
@@ -178,7 +189,15 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
     raw_status = cleaned_fields.get('status', '')
     norm_status = STATUS_SYNONYM_MAP.get(raw_status, raw_status)
     if norm_status != raw_status:
-        corrections.append({'field': 'status', 'rule': 'TRIM_NORMALIZE_STATUS', 'original': raw_status, 'corrected': norm_status})
+        corrections.append({
+            'field': 'status',
+            'rule': 'TRIM_NORMALIZE_STATUS',
+            'rule_code': 'STATUS_SYNONYM',
+            'original': raw_status,
+            'original_value': raw_status,
+            'corrected': norm_status,
+            'corrected_value': norm_status
+        })
     if norm_status not in ALLOWED_STATUSES:
         errors.append({'error_code': 'INVALID_STATUS', 'error_detail': f'حالة الطلب غير مسموحة: {norm_status}', 'field': 'status'})
     cleaned_fields['status'] = norm_status
@@ -221,14 +240,22 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
             date_val = date_part
 
         if orig_date != date_val:
-            corrections.append({'field': 'order_date', 'rule': 'DATE_NORMALIZE', 'original': orig_date, 'corrected': date_val})
+            corrections.append({
+                'field': 'order_date',
+                'rule': 'DATE_NORMALIZE',
+                'rule_code': 'DATE_NORMALIZE',
+                'original': orig_date,
+                'original_value': orig_date,
+                'corrected': date_val,
+                'corrected_value': date_val
+            })
 
         try:
             # التحقق من صحة التاريخ حسب المعيار القياسي ISO
             datetime.fromisoformat(date_val)
             cleaned_fields['order_date'] = date_val
         except ValueError:
-            errors.append({'error_code': 'IMPOSSIBLE_DATE', 'error_detail': f'تاريخ غير صالح أو مستحيل: {date_val}', 'field': 'order_date'})
+            errors.append({'error_code': 'INVALID_IMPOSSIBLE_DATE', 'error_detail': f'تاريخ غير صالح أو مستحيل: {date_val}', 'field': 'order_date'})
     
     # =========================================================================
     # القواعد 1+3+4: تنظيف المبالغ الرقمية (تكلفة التوصيل، المدفوع، الإجمالي)
@@ -252,7 +279,15 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
     currency = cleaned_fields.get('currency', '')
     norm_currency = CURRENCY_MAP.get(currency, currency)
     if norm_currency != currency:
-        corrections.append({'field': 'currency', 'rule': 'CURRENCY_TEXT', 'original': currency, 'corrected': norm_currency})
+        corrections.append({
+            'field': 'currency',
+            'rule': 'CURRENCY_TEXT',
+            'rule_code': 'CURRENCY_TEXT',
+            'original': currency,
+            'original_value': currency,
+            'corrected': norm_currency,
+            'corrected_value': norm_currency
+        })
     
     if norm_currency not in CURRENCY_MAP.values() and norm_currency != 'YER':
         errors.append({'error_code': 'INVALID_CURRENCY', 'error_detail': f'عملة غير مسموحة: {norm_currency}', 'field': 'currency'})
@@ -263,13 +298,21 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
     phone = cleaned_fields.get('customer_phone', '')
     clean_phone = re.sub(r'[\s\+\-]', '', phone)
     if phone != clean_phone:
-        corrections.append({'field': 'customer_phone', 'rule': 'PHONE_FORMAT', 'original': phone, 'corrected': clean_phone})
+        corrections.append({
+            'field': 'customer_phone',
+            'rule': 'PHONE_FORMAT',
+            'rule_code': 'PHONE_FORMAT',
+            'original': phone,
+            'original_value': phone,
+            'corrected': clean_phone,
+            'corrected_value': clean_phone
+        })
         
     if not re.match(PHONE_REGEX, clean_phone):
         errors.append({'error_code': 'INVALID_PHONE', 'error_detail': f'رقم الهاتف لا يطابق النمط القياسي اليمني: {clean_phone}', 'field': 'customer_phone'})
         
     # =========================================================================
-    # القاعدة 6: إصلاح وتصحيح البريد الإلكتروني (EMAIL_FIX)
+    # القاعدة 6: إصلاح وتصحيح البريد الإلكتروني (EMAIL_FIX / EMAIL_REPEATED_SYMBOLS)
     # =========================================================================
     email = cleaned_fields.get('customer_email', '')
     if not email or email == '@@':
@@ -277,7 +320,15 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
     else:
         fixed_email = email.replace('@@', '@').replace('..', '.')
         if email != fixed_email:
-            corrections.append({'field': 'customer_email', 'rule': 'EMAIL_FIX', 'original': email, 'corrected': fixed_email})
+            corrections.append({
+                'field': 'customer_email',
+                'rule': 'EMAIL_REPEATED_SYMBOLS',
+                'rule_code': 'EMAIL_REPEATED_SYMBOLS',
+                'original': email,
+                'original_value': email,
+                'corrected': fixed_email,
+                'corrected_value': fixed_email
+            })
         
         if not re.match(EMAIL_REGEX, fixed_email):
             errors.append({'error_code': 'INVALID_EMAIL', 'error_detail': f'البريد الإلكتروني غير مطابق للصيغة القياسية: {fixed_email}', 'field': 'customer_email'})
@@ -285,6 +336,8 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
             
     # في حال تراكم أي أخطاء أثناء التدقيق -> عزل السجل فوراً
     if errors:
+        if len(errors) >= 2 and not any(e.get('error_code') == 'MULTIPLE_CONFLICTING_ERRORS' for e in errors):
+            errors.append({'error_code': 'MULTIPLE_CONFLICTING_ERRORS', 'error_detail': 'عدة أخطاء جوهرية تمنع التصحيح الآمن'})
         return ('quarantine', raw_record, errors)
 
     # =========================================================================
@@ -300,18 +353,24 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
         corrections.append({
             'field': 'total_amount', 
             'rule': 'TOTAL_RECALC', 
+            'rule_code': 'TOTAL_RECALC',
             'original': total_amount, 
-            'corrected': expected_total
+            'original_value': total_amount,
+            'corrected': expected_total,
+            'corrected_value': expected_total
         })
         total_amount = expected_total
 
     # =========================================================================
     # بناء المستند المنظف النهائي (Validated Document Structure)
     # =========================================================================
+    quality_status = 'corrected' if corrections else 'valid'
     validated_doc = {
         'order_id': cleaned_fields['order_id'],
         'order_date': cleaned_fields.get('order_date', ''),
         'status': cleaned_fields['status'],
+        'quality_status': quality_status,
+        'corrections': corrections if quality_status == 'corrected' else [],
         'customer': {
             'customer_id': cleaned_fields['customer_id'],
             'name': cleaned_fields.get('customer_name', ''),
@@ -337,7 +396,4 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
     }
 
     # إرجاع النتيجة مع سجل التدقيق
-    if corrections:
-        return ('corrected', validated_doc, corrections)
-    else:
-        return ('valid', validated_doc, [])
+    return (quality_status, validated_doc, corrections)

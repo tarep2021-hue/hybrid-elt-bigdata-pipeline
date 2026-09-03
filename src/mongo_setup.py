@@ -62,6 +62,10 @@ VALIDATION_SCHEMA: Dict[str, Any] = {
                 "enum": list(ALLOWED_STATUSES),
                 "description": "حالة الطلب - يجب أن تكون إحدى القيم المسموحة",
             },
+            "quality_status": {
+                "enum": ["valid", "corrected"],
+                "description": "حالة جودة السجل - يجب أن تكون إما valid أو corrected",
+            },
             "customer": {
                 "bsonType": "object",
                 "required": ["customer_id", "name", "phone", "email", "address"],

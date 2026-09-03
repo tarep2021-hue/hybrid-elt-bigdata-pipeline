@@ -42,8 +42,16 @@ def route_file(file_path: str) -> str:
     # تحديد المحرك بناءً على الحد المحدد في الإعدادات
     if size_mb <= SMALL_FILE_THRESHOLD_MB:
         engine = "python_batch"
+        reason = (
+            f"حجم الملف ({size_mb:.2f} MB) أصغر من أو يساوي الحد ({SMALL_FILE_THRESHOLD_MB} MB). "
+            f"تم اختيار Python Batch Streaming لتوفير استهلاك الذاكرة وتفادي زمن إقلاع Spark."
+        )
     else:
         engine = "pyspark"
+        reason = (
+            f"حجم الملف ({size_mb:.2f} MB) يتجاوز الحد الفاصل ({SMALL_FILE_THRESHOLD_MB} MB). "
+            f"تم اختيار PySpark لتوزيع ومعالجة البيانات بالتوازي عبر الأنوية المتعددة."
+        )
 
     if hasattr(sys.stdout, "reconfigure"):
         try:
@@ -51,13 +59,14 @@ def route_file(file_path: str) -> str:
         except Exception:
             pass
 
-    # طباعة تفاصيل القرار
-    print("=" * 60)
-    print(f"  File Name   : {file_name}")
-    print(f"  File Size   : {size_mb:.2f} MB ({size_bytes:,} bytes)")
-    print(f"  Threshold   : {SMALL_FILE_THRESHOLD_MB} MB")
-    print(f"  Chosen Engine: {engine}")
-    print("=" * 60)
+    # طباعة تفاصيل القرار (الحجم، المحرك، وسبب الاختيار)
+    print("=" * 65)
+    print(f"  File Name     : {file_name}")
+    print(f"  File Size     : {size_mb:.2f} MB ({size_bytes:,} bytes)")
+    print(f"  Threshold     : {SMALL_FILE_THRESHOLD_MB} MB")
+    print(f"  Chosen Engine : {engine}")
+    print(f"  Choice Reason : {reason}")
+    print("=" * 65)
 
     return engine
 

@@ -110,7 +110,8 @@ def _process_partition(partition_iter, run_id, file_name):
 
     counts = {
         "raw": 0, "valid": 0, "corrected": 0,
-        "quarantine": 0, "errors": {}
+        "quarantine": 0, "errors": {},
+        "inserted": 0, "updated": 0, "unchanged": 0
     }
     batch_size = BATCH_SIZE
 
@@ -151,7 +152,6 @@ def _process_partition(partition_iter, run_id, file_name):
             record["run_id"] = run_id
             record["validated_at"] = datetime.now(timezone.utc).isoformat()
             if status == "corrected":
-                record["corrections"] = details
                 counts["corrected"] += 1
             else:
                 counts["valid"] += 1
@@ -175,9 +175,14 @@ def _process_partition(partition_iter, run_id, file_name):
                 for doc in validated_batch
             ]
             try:
-                validated_col.bulk_write(ops, ordered=False)
-            except BulkWriteError:
-                pass
+                res = validated_col.bulk_write(ops, ordered=False)
+                counts["inserted"] += res.upserted_count
+                counts["updated"] += res.modified_count
+                counts["unchanged"] += (res.matched_count - res.modified_count)
+            except BulkWriteError as bwe:
+                details = bwe.details or {}
+                counts["inserted"] += details.get("nUpserted", 0)
+                counts["updated"] += details.get("nModified", 0)
             validated_batch.clear()
 
         if len(quarantine_batch) >= batch_size:
@@ -204,9 +209,14 @@ def _process_partition(partition_iter, run_id, file_name):
             for doc in validated_batch
         ]
         try:
-            validated_col.bulk_write(ops, ordered=False)
-        except BulkWriteError:
-            pass
+            res = validated_col.bulk_write(ops, ordered=False)
+            counts["inserted"] += res.upserted_count
+            counts["updated"] += res.modified_count
+            counts["unchanged"] += (res.matched_count - res.modified_count)
+        except BulkWriteError as bwe:
+            details = bwe.details or {}
+            counts["inserted"] += details.get("nUpserted", 0)
+            counts["updated"] += details.get("nModified", 0)
 
     if quarantine_batch:
         try:
@@ -250,77 +260,90 @@ def load(file_path, run_id=None, metrics=None):
 
     # ─── إنشاء SparkSession ───
     spark = _get_spark_session()
+    try:
+        print(f"  Spark version       : {spark.version}")
+        print(f"  Master              : {spark.sparkContext.master}")
+        print(f"  Default parallelism : {spark.sparkContext.defaultParallelism}")
+        print(f"  Spark UI            : {spark.sparkContext.uiWebUrl}")
+        print()
 
-    print(f"  Spark version       : {spark.version}")
-    print(f"  Master              : {spark.sparkContext.master}")
-    print(f"  Default parallelism : {spark.sparkContext.defaultParallelism}")
-    print(f"  Spark UI            : {spark.sparkContext.uiWebUrl}")
-    print()
+        # ─── قراءة CSV مع Schema ثابتة ───
+        df = (
+            spark.read
+            .schema(_get_raw_schema())
+            .option("header", True)
+            .option("encoding", "UTF-8")
+            .option("quote", '"')
+            .option("escape", '"')
+            .option("multiLine", "true")
+            .option("mode", "PERMISSIVE")
+            .csv(str(file_path))
+        )
 
-    # ─── قراءة CSV مع Schema ثابتة ───
-    df = (
-        spark.read
-        .schema(_get_raw_schema())
-        .option("header", True)
-        .option("encoding", "UTF-8")
-        .option("quote", '"')
-        .option("escape", '"')
-        .option("mode", "PERMISSIVE")
-        .csv(str(file_path))
-    )
+        num_partitions = df.rdd.getNumPartitions()
+        print(f"  Input partitions: {num_partitions}")
+        df.printSchema()
 
-    num_partitions = df.rdd.getNumPartitions()
-    print(f"  Input partitions: {num_partitions}")
-    df.printSchema()
+        # ─── إعادة التقسيم إذا لزم الأمر ───
+        if num_partitions < SPARK_TARGET_PARTITIONS:
+            df = df.repartition(SPARK_TARGET_PARTITIONS)
+            num_partitions = df.rdd.getNumPartitions()
+            print(f"  Repartitioned to: {num_partitions}")
 
-    # ─── إعادة التقسيم إذا لزم الأمر ───
-    if num_partitions < SPARK_TARGET_PARTITIONS:
-        df = df.repartition(SPARK_TARGET_PARTITIONS)
-        print(f"  Repartitioned to: {df.rdd.getNumPartitions()}")
+        metrics.set_engine_settings(partitions=num_partitions)
 
-    # ─── معالجة كل بارتشن بشكل مستقل ───
-    print("\n  Processing partitions...")
+        # ─── معالجة كل بارتشن بشكل مستقل ───
+        print("\n  Processing partitions...")
 
-    # جمع النتائج من كل بارتشن
-    results_rdd = df.rdd.mapPartitions(
-        lambda part: _process_partition(part, run_id, file_name)
-    )
+        # جمع النتائج من كل بارتشن
+        results_rdd = df.rdd.mapPartitions(
+            lambda part: _process_partition(part, run_id, file_name)
+        )
 
-    # تنفيذ المعالجة وجمع الإحصائيات
-    partition_results = results_rdd.collect()
+        # تنفيذ المعالجة وجمع الإحصائيات
+        partition_results = results_rdd.collect()
 
-    # ─── تجميع النتائج ───
-    total_errors = {}
-    for result in partition_results:
-        # تسجيل Valid
-        for _ in range(result["valid"]):
-            metrics.record_result("valid")
-        # تسجيل Corrected
-        for _ in range(result["corrected"]):
-            metrics.record_result("corrected")
-        # تسجيل Quarantine مع أكواد الأخطاء
-        for code, count in result["errors"].items():
-            for _ in range(count):
-                metrics.record_result("quarantine", [code])
-            total_errors[code] = total_errors.get(code, 0) + count
+        # ─── تجميع النتائج ───
+        total_errors = {}
+        for result in partition_results:
+            # تسجيل Valid
+            for _ in range(result["valid"]):
+                metrics.record_result("valid")
+            # تسجيل Corrected
+            for _ in range(result["corrected"]):
+                metrics.record_result("corrected")
+            # تسجيل Quarantine مع أكواد الأخطاء
+            for code, count in result["errors"].items():
+                for _ in range(count):
+                    metrics.record_result("quarantine", [code])
+                total_errors[code] = total_errors.get(code, 0) + count
 
-    # ─── ملخص ───
-    total_raw = sum(r["raw"] for r in partition_results)
-    total_valid = sum(r["valid"] for r in partition_results)
-    total_corrected = sum(r["corrected"] for r in partition_results)
-    total_quarantine = sum(r["quarantine"] for r in partition_results)
+        # تجميع عدادات Upsert
+        total_inserted = sum(r.get("inserted", 0) for r in partition_results)
+        total_updated = sum(r.get("updated", 0) for r in partition_results)
+        total_unchanged = sum(r.get("unchanged", 0) for r in partition_results)
+        metrics.record_upsert_counts(total_inserted, total_updated, total_unchanged)
 
-    print(f"\n{'─'*60}")
-    print(f"  PySpark Loader Summary")
-    print(f"{'─'*60}")
-    print(f"  Total partitions processed : {len(partition_results)}")
-    print(f"  Raw records                : {total_raw:,}")
-    print(f"  Valid records              : {total_valid:,}")
-    print(f"  Corrected records          : {total_corrected:,}")
-    print(f"  Quarantined records        : {total_quarantine:,}")
-    print(f"{'─'*60}\n")
+        # ─── ملخص ───
+        total_raw = sum(r["raw"] for r in partition_results)
+        total_valid = sum(r["valid"] for r in partition_results)
+        total_corrected = sum(r["corrected"] for r in partition_results)
+        total_quarantine = sum(r["quarantine"] for r in partition_results)
 
-    # إيقاف Spark
-    spark.stop()
+        print(f"\n{'─'*60}")
+        print(f"  PySpark Loader Summary")
+        print(f"{'─'*60}")
+        print(f"  Total partitions processed : {len(partition_results)}")
+        print(f"  Raw records                : {total_raw:,}")
+        print(f"  Valid records              : {total_valid:,}")
+        print(f"  Corrected records          : {total_corrected:,}")
+        print(f"  Quarantined records        : {total_quarantine:,}")
+        print(f"  Validated inserted         : {total_inserted:,}")
+        print(f"  Validated updated          : {total_updated:,}")
+        print(f"  Validated unchanged        : {total_unchanged:,}")
+        print(f"{'─'*60}\n")
 
-    return metrics
+        return metrics
+    finally:
+        # إيقاف Spark دائماً داخل finally
+        spark.stop()

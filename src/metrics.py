@@ -62,7 +62,23 @@ class PipelineMetrics:
         """
         self.run_id = run_id
         self.file_source = str(file_source)
+        self.file_name = Path(file_source).name
         self.engine_used = engine_used
+
+        # حساب حجم الملف بالميجابايت
+        try:
+            self.file_size_mb = round(os.path.getsize(file_source) / (1024 * 1024), 2)
+        except Exception:
+            self.file_size_mb = 0.0
+
+        # إعدادات المحرك (دفعات / بارتشنات)
+        self.batch_size: Optional[int] = None
+        self.partitions: Optional[int] = None
+
+        # عدادات عمليات الـ Upsert (Idempotency Tracking)
+        self.inserted_count: int = 0
+        self.updated_count: int = 0
+        self.unchanged_count: int = 0
 
         # تسجيل وقت البدء واستهلاك الذاكرة المبدئي
         self.start_time = time.perf_counter()
@@ -76,6 +92,19 @@ class PipelineMetrics:
 
         # قاموس تفصيل الأخطاء (رمز الخطأ -> العدد)
         self.error_breakdown: Dict[str, int] = {}
+
+    def set_engine_settings(self, batch_size: Optional[int] = None, partitions: Optional[int] = None) -> None:
+        """ضبط إعدادات المحرك المستخدم (حجم الدفعة أو عدد البارتشنات)."""
+        if batch_size is not None:
+            self.batch_size = batch_size
+        if partitions is not None:
+            self.partitions = partitions
+
+    def record_upsert_counts(self, inserted: int = 0, updated: int = 0, unchanged: int = 0) -> None:
+        """تسجيل عدادات عمليات Upsert لتأكيد خاصية عدم التكرار (Idempotency)."""
+        self.inserted_count += inserted
+        self.updated_count += updated
+        self.unchanged_count += unchanged
 
     def record_result(self, status: str, error_codes: Optional[List[str]] = None) -> None:
         """
@@ -176,15 +205,32 @@ class PipelineMetrics:
         iso_timestamp = datetime.now().isoformat()
 
         report: Dict[str, Any] = {
+            # --- المقاييس المحددة نصاً في جدول الوثيقة (القسم 6.12) ---
             "run_id": self.run_id,
-            "file_source": self.file_source,
+            "file_name": self.file_name,
+            "file_size_mb": self.file_size_mb,
             "engine_used": self.engine_used,
+            "rows_read": self.raw_count,
+            "raw_loaded": self.raw_count,
+            "valid_count": self.valid_count,
+            "corrected_count": self.corrected_count,
+            "quarantine_count": self.quarantine_count,
+            "elapsed_seconds": elapsed_seconds,
+            "throughput": throughput,
+            "batch_size": self.batch_size,
+            "partitions": self.partitions,
+            "error_case_counts": self.error_breakdown,
+            "inserted_count": self.inserted_count,
+            "updated_count": self.updated_count,
+            "unchanged_count": self.unchanged_count,
+
+            # --- الحقول التوافقية الإضافية (Backwards Compatibility) ---
+            "file_source": self.file_source,
             "total_raw_records": self.raw_count,
             "valid_records": self.valid_count,
             "corrected_records": self.corrected_count,
             "quarantined_records": self.quarantine_count,
             "consistency_check": consistency_status,
-            "elapsed_seconds": elapsed_seconds,
             "throughput_records_per_sec": throughput,
             "memory_start_mb": self.start_memory,
             "memory_end_mb": memory_end,
@@ -241,6 +287,8 @@ class PipelineMetrics:
         else:
             error_table = "| - | 0 | 0.0% | *(لا توجد أخطاء مسجلة)* |"
 
+        engine_setting_str = f"Batch Size: {report['batch_size']:,}" if report.get("batch_size") else (f"Partitions: {report['partitions']}" if report.get("partitions") else "Default")
+
         md = f"""# تقرير تنفيذ خط الأنابيب | Pipeline Execution Report
 
 **تاريخ التقرير:** `{report['timestamp']}`  
@@ -253,17 +301,19 @@ class PipelineMetrics:
 | الخاصية / Property | القيمة / Value |
 | :--- | :--- |
 | **معرف التشغيل (Run ID)** | `{report['run_id']}` |
-| **الملف المصدر (Source File)** | `{report['file_source']}` |
-| **المحرك المستخدم (Engine)** | `{report['engine_used']}` |
+| **اسم الملف (File Name)** | `{report['file_name']}` (`{report['file_size_mb']:.2f} MB`) |
+| **المسار الكامل (Source Path)** | `{report['file_source']}` |
+| **المحرك المستخدم (Engine)** | `{report['engine_used']}` ({engine_setting_str}) |
 | **وقت التنفيذ (Timestamp)** | `{report['timestamp']}` |
 
 ---
 
-## 2. إحصائيات السجلات | Data Records Breakdown
+## 2. إحصائيات السجلات والاتساق | Records & Consistency
 
 | نوع السجل / Record Type | العدد / Count | النسبة / Percentage |
 | :--- | :--- | :--- |
-| **إجمالي السجلات الخام (Total Raw)** | **{report['total_raw_records']:,}** | **100.00%** |
+| **إجمالي السجلات المقروءة (Rows Read)** | **{report['rows_read']:,}** | **100.00%** |
+| **السجلات المحملة في Raw (Raw Loaded)** | **{report['raw_loaded']:,}** | **100.00%** |
 | ✅ السجلات السليمة (Valid Records) | {report['valid_records']:,} | {valid_pct:.2f}% |
 | 🔄 السجلات المصححة (Corrected Records) | {report['corrected_records']:,} | {corr_pct:.2f}% |
 | ⚠️ السجلات المعزولة (Quarantined Records) | {report['quarantined_records']:,} | {quar_pct:.2f}% |
@@ -271,19 +321,29 @@ class PipelineMetrics:
 
 ---
 
-## 3. مقاييس الأداء والموارد | Performance & Resource Metrics
+## 3. مقاييس عدم التكرار والـ Upsert | Idempotency Metrics
+
+| مقياس الـ Upsert | العدد / Count | الوصف / Description |
+| :--- | :--- | :--- |
+| 🟢 **سجلات جديدة مضافة (Inserted)** | `{report['inserted_count']:,}` | تمت إضافتها لأول مرة في `orders_validated` |
+| 🟡 **سجلات محدثة (Updated)** | `{report['updated_count']:,}` | كانت موجودة وتم تحديث بياناتها |
+| ⚪ **سجلات غير متغيرة (Unchanged)** | `{report['unchanged_count']:,}` | مطابقة تماماً ولم تتطلب أي تغيير |
+
+---
+
+## 4. مقاييس الأداء والموارد | Performance & Resource Metrics
 
 | المقياس / Metric | القيمة / Value |
 | :--- | :--- |
 | ⏱️ **الوقت المستغرق الكلي (Elapsed Time)** | `{report['elapsed_seconds']:.2f}` ثانية (seconds) |
-| 🚀 **معدل المعالجة (Throughput)** | `{report['throughput_records_per_sec']:,.2f}` سجل/ثانية (records/sec) |
+| 🚀 **معدل المعالجة (Throughput)** | `{report['throughput']:,.2f}` سجل/ثانية (records/sec) |
 | 💾 **الذاكرة عند البدء (Start Memory)** | `{report['memory_start_mb']:.2f}` MB |
 | 💾 **الذاكرة عند الانتهاء (End Memory)** | `{report['memory_end_mb']:.2f}` MB |
 | 📈 **فارق استهلاك الذاكرة (Memory Delta)** | `{report['memory_delta_mb']:+.2f}` MB |
 
 ---
 
-## 4. تفاصيل أخطاء العزل | Quarantine Error Breakdown
+## 5. تفاصيل أخطاء العزل | Quarantine Error Breakdown
 
 | رمز الخطأ / Error Code | عدد التكرار / Count | النسبة من الإجمالي / % of Total |
 | :--- | :--- | :--- |
@@ -306,7 +366,7 @@ class PipelineMetrics:
         print("=" * 70)
         print(f"  Run ID            : {report['run_id']}")
         print(f"  Engine Used       : {report['engine_used']}")
-        print(f"  File Source       : {report['file_source']}")
+        print(f"  File Name / Size  : {report['file_name']} ({report['file_size_mb']:.2f} MB)")
         print(f"  Timestamp         : {report['timestamp']}")
         print("-" * 70)
         print(f"  Total Raw Records : {report['total_raw_records']:,}")
@@ -315,8 +375,10 @@ class PipelineMetrics:
         print(f"  - Quarantined     : {report['quarantined_records']:,}")
         print(f"  Consistency Check : {report['consistency_check']}")
         print("-" * 70)
+        print(f"  Upsert Metrics    : Inserted: {report['inserted_count']:,} | Updated: {report['updated_count']:,} | Unchanged: {report['unchanged_count']:,}")
+        print("-" * 70)
         print(f"  Elapsed Time      : {report['elapsed_seconds']:.2f} s")
-        print(f"  Throughput        : {report['throughput_records_per_sec']:,.2f} records/s")
+        print(f"  Throughput        : {report['throughput']:,.2f} records/s")
         print(f"  Memory Start      : {report['memory_start_mb']:.2f} MB")
         print(f"  Memory End        : {report['memory_end_mb']:.2f} MB")
         print(f"  Memory Delta      : {report['memory_delta_mb']:+.2f} MB")

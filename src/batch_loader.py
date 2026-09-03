@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from pymongo import UpdateOne
 from pymongo.errors import BulkWriteError
 
-from config.settings import FILE_ENCODING, BATCH_SIZE
-from src.mongo_setup import get_database, get_collections
+from config.settings import FILE_ENCODING, BATCH_SIZE, DB_NAME
+from src.mongo_setup import get_client, get_collections
 from src.quality_rules import apply_rules
 from src.metrics import PipelineMetrics
 
@@ -111,135 +111,147 @@ def load(file_path, run_id=None, metrics=None, progress_callback=None, cancel_ch
             engine_used="python_batch"
         )
 
-    collections = get_collections()
-    raw_col = collections["raw"]
-    validated_col = collections["validated"]
-    quarantine_col = collections["quarantine"]
+    metrics.set_engine_settings(batch_size=BATCH_SIZE)
 
-    # مصفوفات الدفعات المؤقتة
-    raw_batch = []
-    validated_batch = []
-    quarantine_batch = []
+    client = get_client()
+    try:
+        db = client[DB_NAME]
+        collections = get_collections(db)
+        raw_col = collections["raw"]
+        validated_col = collections["validated"]
+        quarantine_col = collections["quarantine"]
 
-    # عدادات النتائج التراكمية
-    total_inserted_raw = 0
-    total_upsert_results = {"inserted": 0, "updated": 0, "unchanged": 0}
-    total_quarantined = 0
+        # مصفوفات الدفعات المؤقتة
+        raw_batch = []
+        validated_batch = []
+        quarantine_batch = []
 
-    file_name = str(file_path).split("\\")[-1].split("/")[-1]
+        # عدادات النتائج التراكمية
+        total_inserted_raw = 0
+        total_upsert_results = {"inserted": 0, "updated": 0, "unchanged": 0}
+        total_quarantined = 0
 
-    print(f"\n{'='*60}")
-    print(f"  Python Batch Loader — Streaming Mode")
-    print(f"  File: {file_name}")
-    print(f"  Run ID: {run_id}")
-    print(f"  Batch Size: {BATCH_SIZE:,}")
-    print(f"{'='*60}\n")
+        file_name = str(file_path).split("\\")[-1].split("/")[-1]
 
-    # ─── القراءة التدفقية ───
-    with open(file_path, encoding=FILE_ENCODING, newline="") as f:
-        reader = csv.DictReader(f)
+        print(f"\n{'='*60}")
+        print(f"  Python Batch Loader — Streaming Mode")
+        print(f"  File: {file_name}")
+        print(f"  Run ID: {run_id}")
+        print(f"  Batch Size: {BATCH_SIZE:,}")
+        print(f"{'='*60}\n")
 
-        # تنظيف أسماء الأعمدة من BOM المتبقي
-        if reader.fieldnames:
-            reader.fieldnames = [
-                col.replace("\ufeff", "").strip()
-                for col in reader.fieldnames
-            ]
+        # ─── القراءة التدفقية ───
+        with open(file_path, encoding=FILE_ENCODING, newline="") as f:
+            reader = csv.DictReader(f)
 
-        for row_num, row in enumerate(reader, start=1):
-            # ─── Stage 1: Raw Ingestion ───
-            raw_doc = {
-                "run_id": run_id,
-                "file_source": file_name,
-                "source_row_number": row_num,
-                "ingested_at": datetime.now(timezone.utc).isoformat(),
-                "engine_used": "python_batch",
-                "raw_record": dict(row),  # نسخة من السجل كما هو
-            }
-            raw_batch.append(raw_doc)
+            # تنظيف أسماء الأعمدة من BOM المتبقي
+            if reader.fieldnames:
+                reader.fieldnames = [
+                    col.replace("\ufeff", "").strip()
+                    for col in reader.fieldnames
+                ]
 
-            # ─── Stage 2: Cleaning & Classification ───
-            status, record, details = apply_rules(dict(row))
-
-            if status == "quarantine":
-                error_codes = [d.get("error_code", "UNKNOWN") for d in details]
-                quarantine_doc = {
+            for row_num, row in enumerate(reader, start=1):
+                # ─── Stage 1: Raw Ingestion ───
+                raw_doc = {
                     "run_id": run_id,
                     "file_source": file_name,
                     "source_row_number": row_num,
-                    "raw_record": dict(row),
-                    "error_codes": error_codes,
-                    "error_details": details,
-                    "quarantined_at": datetime.now(timezone.utc).isoformat(),
+                    "ingested_at": datetime.now(timezone.utc).isoformat(),
+                    "engine_used": "python_batch",
+                    "raw_record": dict(row),  # نسخة من السجل كما هو
                 }
-                quarantine_batch.append(quarantine_doc)
-                metrics.record_result("quarantine", error_codes)
-            else:
-                # valid أو corrected
-                record["run_id"] = run_id
-                record["validated_at"] = datetime.now(timezone.utc).isoformat()
-                if status == "corrected":
-                    record["corrections"] = details  # Audit Trail
-                validated_batch.append(record)
-                metrics.record_result(status)
+                raw_batch.append(raw_doc)
 
-            # ─── Flush batches when full ───
-            if len(raw_batch) >= BATCH_SIZE:
-                total_inserted_raw += _insert_batch_raw(raw_col, raw_batch)
-                raw_batch.clear()
+                # ─── Stage 2: Cleaning & Classification ───
+                status, record, details = apply_rules(dict(row))
 
-            if len(validated_batch) >= BATCH_SIZE:
-                result = _upsert_batch_validated(validated_col, validated_batch)
-                for k in total_upsert_results:
-                    total_upsert_results[k] += result[k]
-                validated_batch.clear()
+                if status == "quarantine":
+                    error_codes = [d.get("error_code", "UNKNOWN") for d in details]
+                    quarantine_doc = {
+                        "run_id": run_id,
+                        "file_source": file_name,
+                        "source_row_number": row_num,
+                        "raw_record": dict(row),
+                        "error_codes": error_codes,
+                        "error_details": details,
+                        "quarantined_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    quarantine_batch.append(quarantine_doc)
+                    metrics.record_result("quarantine", error_codes)
+                else:
+                    # valid أو corrected
+                    record["run_id"] = run_id
+                    record["validated_at"] = datetime.now(timezone.utc).isoformat()
+                    validated_batch.append(record)
+                    metrics.record_result(status)
 
-            if len(quarantine_batch) >= BATCH_SIZE:
-                total_quarantined += _insert_batch_quarantine(
-                    quarantine_col, quarantine_batch
-                )
-                quarantine_batch.clear()
+                # ─── Flush batches when full ───
+                if len(raw_batch) >= BATCH_SIZE:
+                    total_inserted_raw += _insert_batch_raw(raw_col, raw_batch)
+                    raw_batch.clear()
 
-            # طباعة وتحديث التقدم
-            metrics.print_progress(interval=BATCH_SIZE)
-            
-            # فحص طلب الإلغاء
-            if cancel_check and cancel_check():
-                print("[WARN] User requested pipeline cancellation!")
-                break
+                if len(validated_batch) >= BATCH_SIZE:
+                    result = _upsert_batch_validated(validated_col, validated_batch)
+                    for k in total_upsert_results:
+                        total_upsert_results[k] += result[k]
+                    validated_batch.clear()
 
-            # رد اتصال تحديث واجهة المستخدم
-            if progress_callback and (row_num % 2500 == 0 or row_num == 1):
-                elapsed_now = time.perf_counter() - metrics.start_time
-                speed_now = row_num / elapsed_now if elapsed_now > 0 else 0
-                progress_callback(row_num, speed_now, elapsed_now)
+                if len(quarantine_batch) >= BATCH_SIZE:
+                    total_quarantined += _insert_batch_quarantine(
+                        quarantine_col, quarantine_batch
+                    )
+                    quarantine_batch.clear()
 
-    # ─── Flush remaining batches ───
-    if raw_batch:
-        total_inserted_raw += _insert_batch_raw(raw_col, raw_batch)
-        raw_batch.clear()
+                # طباعة وتحديث التقدم
+                metrics.print_progress(interval=BATCH_SIZE)
+                
+                # فحص طلب الإلغاء
+                if cancel_check and cancel_check():
+                    print("[WARN] User requested pipeline cancellation!")
+                    break
 
-    if validated_batch:
-        result = _upsert_batch_validated(validated_col, validated_batch)
-        for k in total_upsert_results:
-            total_upsert_results[k] += result[k]
-        validated_batch.clear()
+                # رد اتصال تحديث واجهة المستخدم
+                if progress_callback and (row_num % 2500 == 0 or row_num == 1):
+                    elapsed_now = time.perf_counter() - metrics.start_time
+                    speed_now = row_num / elapsed_now if elapsed_now > 0 else 0
+                    progress_callback(row_num, speed_now, elapsed_now)
 
-    if quarantine_batch:
-        total_quarantined += _insert_batch_quarantine(
-            quarantine_col, quarantine_batch
+        # ─── Flush remaining batches ───
+        if raw_batch:
+            total_inserted_raw += _insert_batch_raw(raw_col, raw_batch)
+            raw_batch.clear()
+
+        if validated_batch:
+            result = _upsert_batch_validated(validated_col, validated_batch)
+            for k in total_upsert_results:
+                total_upsert_results[k] += result[k]
+            validated_batch.clear()
+
+        if quarantine_batch:
+            total_quarantined += _insert_batch_quarantine(
+                quarantine_col, quarantine_batch
+            )
+            quarantine_batch.clear()
+
+        # تسجيل عدادات الـ Upsert في كائن المقاييس
+        metrics.record_upsert_counts(
+            inserted=total_upsert_results["inserted"],
+            updated=total_upsert_results["updated"],
+            unchanged=total_upsert_results["unchanged"]
         )
-        quarantine_batch.clear()
 
-    # ─── ملخص التحميل ───
-    print(f"\n{'─'*60}")
-    print(f"  Batch Loader Summary")
-    print(f"{'─'*60}")
-    print(f"  Raw inserted       : {total_inserted_raw:,}")
-    print(f"  Validated inserted : {total_upsert_results['inserted']:,}")
-    print(f"  Validated updated  : {total_upsert_results['updated']:,}")
-    print(f"  Validated unchanged: {total_upsert_results['unchanged']:,}")
-    print(f"  Quarantined        : {total_quarantined:,}")
-    print(f"{'─'*60}\n")
+        # ─── ملخص التحميل ───
+        print(f"\n{'─'*60}")
+        print(f"  Batch Loader Summary")
+        print(f"{'─'*60}")
+        print(f"  Raw inserted       : {total_inserted_raw:,}")
+        print(f"  Validated inserted : {total_upsert_results['inserted']:,}")
+        print(f"  Validated updated  : {total_upsert_results['updated']:,}")
+        print(f"  Validated unchanged: {total_upsert_results['unchanged']:,}")
+        print(f"  Quarantined        : {total_quarantined:,}")
+        print(f"{'─'*60}\n")
 
-    return metrics
+        return metrics
+    finally:
+        client.close()

@@ -1,6 +1,6 @@
 # تقرير تنفيذ خط الأنابيب | Pipeline Execution Report
 
-**تاريخ التقرير:** `2026-08-25T19:06:57.633302`  
+**تاريخ التقرير:** `2026-08-26T00:29:13.874031`  
 **قاعدة البيانات المستهدفة:** `ecommerce_store` (`orders_raw`, `orders_validated`, `orders_quarantine`)
 
 ---
@@ -9,10 +9,10 @@
 
 | الخاصية / Property | القيمة / Value |
 | :--- | :--- |
-| **معرف التشغيل (Run ID)** | `57323342` |
+| **معرف التشغيل (Run ID)** | `7b511fab` |
 | **الملف المصدر (Source File)** | `C:\Users\ziad\Desktop\4th year\tkalef\omar abu sanad\تكاليف\مشروع نهائي\big data\orders_huge_mixed_quality.csv` |
 | **المحرك المستخدم (Engine)** | `pyspark` |
-| **وقت التنفيذ (Timestamp)** | `2026-08-25T19:06:57.633302` |
+| **وقت التنفيذ (Timestamp)** | `2026-08-26T00:29:13.874031` |
 
 ---
 
@@ -32,11 +32,11 @@
 
 | المقياس / Metric | القيمة / Value |
 | :--- | :--- |
-| ⏱️ **الوقت المستغرق الكلي (Elapsed Time)** | `2339.06` ثانية (seconds) |
-| 🚀 **معدل المعالجة (Throughput)** | `12,915.20` سجل/ثانية (records/sec) |
-| 💾 **الذاكرة عند البدء (Start Memory)** | `38.96` MB |
-| 💾 **الذاكرة عند الانتهاء (End Memory)** | `46.84` MB |
-| 📈 **فارق استهلاك الذاكرة (Memory Delta)** | `+7.88` MB |
+| ⏱️ **الوقت المستغرق الكلي (Elapsed Time)** | `3362.81` ثانية (seconds) |
+| 🚀 **معدل المعالجة (Throughput)** | `8,983.39` سجل/ثانية (records/sec) |
+| 💾 **الذاكرة عند البدء (Start Memory)** | `38.62` MB |
+| 💾 **الذاكرة عند الانتهاء (End Memory)** | `104.06` MB |
+| 📈 **فارق استهلاك الذاكرة (Memory Delta)** | `+65.44` MB |
 
 ---
 

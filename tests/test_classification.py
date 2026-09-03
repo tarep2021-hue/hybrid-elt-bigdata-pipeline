@@ -56,6 +56,7 @@ class TestClassification:
         status, doc, details = apply_rules(record)
         assert status == "valid"
         assert isinstance(doc, dict)
+        assert doc.get("quality_status") == "valid"
         assert details == []
 
     def test_corrected_record_has_audit_trail(self):
@@ -66,13 +67,14 @@ class TestClassification:
         )
         status, doc, details = apply_rules(record)
         assert status == "corrected"
+        assert doc.get("quality_status") == "corrected"
         assert len(details) > 0
-        # التحقق من بنية audit trail
+        # التحقق من بنية audit trail المتطابقة مع الوثيقة
         for correction in details:
             assert "field" in correction
-            assert "rule" in correction
-            assert "original" in correction
-            assert "corrected" in correction
+            assert "rule_code" in correction or "rule" in correction
+            assert "original_value" in correction or "original" in correction
+            assert "corrected_value" in correction or "corrected" in correction
 
     def test_quarantine_has_error_codes(self):
         """سجل معزول يجب أن يحتوي على error_codes واضحة."""
@@ -95,6 +97,7 @@ class TestClassification:
         error_codes = [d.get("error_code") for d in details]
         assert "MISSING_ORDER_ID" in error_codes
         assert "MISSING_CUSTOMER_ID" in error_codes
+        assert "MULTIPLE_CONFLICTING_ERRORS" in error_codes
 
 
 # ═══════════════════════════════════════════════
