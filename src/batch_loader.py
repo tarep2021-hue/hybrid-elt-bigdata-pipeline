@@ -178,7 +178,11 @@ def load(file_path, run_id=None, metrics=None, progress_callback=None, cancel_ch
                         "quarantined_at": datetime.now(timezone.utc).isoformat(),
                     }
                     quarantine_batch.append(quarantine_doc)
-                    metrics.record_result("quarantine", error_codes)
+                    if "MULTIPLE_CONFLICTING_ERRORS" in error_codes or len(error_codes) > 1:
+                        metrics_error_codes = ["MULTIPLE_CONFLICTING_ERRORS"]
+                    else:
+                        metrics_error_codes = error_codes
+                    metrics.record_result("quarantine", metrics_error_codes)
                 else:
                     # valid أو corrected
                     record["run_id"] = run_id

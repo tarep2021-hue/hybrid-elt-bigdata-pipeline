@@ -134,8 +134,23 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
                         errors.append({'error_code': 'CORRUPTED_ITEMS_JSON', 'error_detail': f'العنصر [{idx}] ليس كائناً صحيحاً', 'field': 'items_json'})
                         continue
 
+                    # التحقق من وجود رمز الصنف SKU
+                    if not item.get('sku') or not str(item.get('sku')).strip():
+                        errors.append({'error_code': 'MISSING_ITEM_SKU', 'error_detail': f'العنصر [{idx}] يفتقر إلى رمز المنتج SKU', 'field': 'items_json'})
+                        continue
+
                     # التحقق من الكمية (يجب أن تكون عدداً موجباً أكبر من الصفر)
                     qty_raw = item.get('qty', 0)
+                    if isinstance(qty_raw, str):
+                        corrections.append({
+                            'field': 'items_json',
+                            'rule': 'QTY_AS_STRING',
+                            'rule_code': 'qty_as_string_in_items',
+                            'original': qty_raw,
+                            'original_value': qty_raw,
+                            'corrected': qty_raw.strip(),
+                            'corrected_value': qty_raw.strip()
+                        })
                     try:
                         qty_num, _ = _clean_numeric_field(str(qty_raw))
                         if qty_num is None or qty_num <= 0:
@@ -186,7 +201,19 @@ def apply_rules(raw_record: dict) -> tuple[str, dict, list]:
             cleaned_fields[key] = val
 
     # توحيد حالة الطلب
+    orig_status_raw = str(raw_record.get('status', ''))
     raw_status = cleaned_fields.get('status', '')
+    if orig_status_raw != raw_status or '  ' in orig_status_raw:
+        corrections.append({
+            'field': 'status',
+            'rule': 'STATUS_EXTRA_SPACES',
+            'rule_code': 'status_extra_spaces',
+            'original': orig_status_raw,
+            'original_value': orig_status_raw,
+            'corrected': raw_status,
+            'corrected_value': raw_status
+        })
+
     norm_status = STATUS_SYNONYM_MAP.get(raw_status, raw_status)
     if norm_status != raw_status:
         corrections.append({

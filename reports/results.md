@@ -1,6 +1,6 @@
 # تقرير تنفيذ خط الأنابيب | Pipeline Execution Report
 
-**تاريخ التقرير:** `2026-08-26T00:29:13.874031`  
+**تاريخ التقرير:** `2026-10-04T17:30:50.179820`  
 **قاعدة البيانات المستهدفة:** `ecommerce_store` (`orders_raw`, `orders_validated`, `orders_quarantine`)
 
 ---
@@ -9,53 +9,65 @@
 
 | الخاصية / Property | القيمة / Value |
 | :--- | :--- |
-| **معرف التشغيل (Run ID)** | `7b511fab` |
-| **الملف المصدر (Source File)** | `C:\Users\tariq\Desktop\4th year\tkalef\omar abu sanad\تكاليف\مشروع نهائي\big data\orders_huge_mixed_quality.csv` |
-| **المحرك المستخدم (Engine)** | `pyspark` |
-| **وقت التنفيذ (Timestamp)** | `2026-08-26T00:29:13.874031` |
+| **معرف التشغيل (Run ID)** | `e1b4b644` |
+| **اسم الملف (File Name)** | `01_student_test_small.csv` (`8.61 MB`) |
+| **المسار الكامل (Source Path)** | `C:\Users\hp\Desktop\مجلد جديد\midterm-data-pipeline\data\01_student_test_small.csv` |
+| **المحرك المستخدم (Engine)** | `python_batch` (Batch Size: 10,000) |
+| **وقت التنفيذ (Timestamp)** | `2026-10-04T17:30:50.179820` |
 
 ---
 
-## 2. إحصائيات السجلات | Data Records Breakdown
+## 2. إحصائيات السجلات والاتساق | Records & Consistency
 
 | نوع السجل / Record Type | العدد / Count | النسبة / Percentage |
 | :--- | :--- | :--- |
-| **إجمالي السجلات الخام (Total Raw)** | **30,209,432** | **100.00%** |
-| ✅ السجلات السليمة (Valid Records) | 22,886,416 | 75.76% |
-| 🔄 السجلات المصححة (Corrected Records) | 4,345,804 | 14.39% |
-| ⚠️ السجلات المعزولة (Quarantined Records) | 2,977,212 | 9.86% |
+| **إجمالي السجلات المقروءة (Rows Read)** | **20,000** | **100.00%** |
+| **السجلات المحملة في Raw (Raw Loaded)** | **20,000** | **100.00%** |
+| ✅ السجلات السليمة (Valid Records) | 12,000 | 60.00% |
+| 🔄 السجلات المصححة (Corrected Records) | 5,000 | 25.00% |
+| ⚠️ السجلات المعزولة (Quarantined Records) | 3,000 | 15.00% |
 | **فحص الاتساق الرياضي (Consistency Check)** | **✅ PASSED** | `Raw == Valid + Corrected + Quarantine` |
 
 ---
 
-## 3. مقاييس الأداء والموارد | Performance & Resource Metrics
+## 3. مقاييس عدم التكرار والـ Upsert | Idempotency Metrics
 
-| المقياس / Metric | القيمة / Value |
-| :--- | :--- |
-| ⏱️ **الوقت المستغرق الكلي (Elapsed Time)** | `3362.81` ثانية (seconds) |
-| 🚀 **معدل المعالجة (Throughput)** | `8,983.39` سجل/ثانية (records/sec) |
-| 💾 **الذاكرة عند البدء (Start Memory)** | `38.62` MB |
-| 💾 **الذاكرة عند الانتهاء (End Memory)** | `104.06` MB |
-| 📈 **فارق استهلاك الذاكرة (Memory Delta)** | `+65.44` MB |
+| مقياس الـ Upsert | العدد / Count | الوصف / Description |
+| :--- | :--- | :--- |
+| 🟢 **سجلات جديدة مضافة (Inserted)** | `17,000` | تمت إضافتها لأول مرة في `orders_validated` |
+| 🟡 **سجلات محدثة (Updated)** | `0` | كانت موجودة وتم تحديث بياناتها |
+| ⚪ **سجلات غير متغيرة (Unchanged)** | `0` | مطابقة تماماً ولم تتطلب أي تغيير |
 
 ---
 
-## 4. تفاصيل أخطاء العزل | Quarantine Error Breakdown
+## 4. مقاييس الأداء والموارد | Performance & Resource Metrics
+
+| المقياس / Metric | القيمة / Value |
+| :--- | :--- |
+| ⏱️ **الوقت المستغرق الكلي (Elapsed Time)** | `4.86` ثانية (seconds) |
+| 🚀 **معدل المعالجة (Throughput)** | `4,115.23` سجل/ثانية (records/sec) |
+| 💾 **الذاكرة عند البدء (Start Memory)** | `32.95` MB |
+| 💾 **الذاكرة عند الانتهاء (End Memory)** | `61.94` MB |
+| 📈 **فارق استهلاك الذاكرة (Memory Delta)** | `+28.99` MB |
+
+---
+
+## 5. تفاصيل أخطاء العزل | Quarantine Error Breakdown
 
 | رمز الخطأ / Error Code | عدد التكرار / Count | النسبة من الإجمالي / % of Total |
 | :--- | :--- | :--- |
-| `CORRUPTED_ITEMS_JSON` | 419,906 | 1.39% |
-| `INVALID_NUMERIC` | 333,888 | 1.11% |
-| `INVALID_PAYMENT_STATUS` | 333,786 | 1.10% |
-| `IMPOSSIBLE_DATE` | 210,524 | 0.70% |
-| `INVALID_STATUS` | 210,194 | 0.70% |
-| `INVALID_CURRENCY` | 210,190 | 0.70% |
-| `INVALID_PHONE` | 210,042 | 0.70% |
-| `INVALID_QUANTITY` | 210,021 | 0.70% |
-| `UNKNOWN_PRICE` | 210,018 | 0.70% |
-| `EMPTY_ITEMS` | 209,934 | 0.69% |
-| `SYMBOLIC_VALUE` | 209,432 | 0.69% |
-| `INVALID_EMAIL` | 209,277 | 0.69% |
+| `EMPTY_ITEMS` | 250 | 1.25% |
+| `INVALID_EMAIL` | 250 | 1.25% |
+| `INVALID_STATUS` | 250 | 1.25% |
+| `CORRUPTED_ITEMS_JSON` | 250 | 1.25% |
+| `AMBIGUOUS_NEGATIVE_VALUE` | 250 | 1.25% |
+| `MISSING_ITEM_SKU` | 250 | 1.25% |
+| `MISSING_CUSTOMER_ID` | 250 | 1.25% |
+| `INVALID_CURRENCY` | 250 | 1.25% |
+| `INVALID_IMPOSSIBLE_DATE` | 250 | 1.25% |
+| `MULTIPLE_CONFLICTING_ERRORS` | 250 | 1.25% |
+| `MISSING_ORDER_ID` | 250 | 1.25% |
+| `INVALID_PHONE` | 250 | 1.25% |
 
 ---
 *تم توليد هذا التقرير آلياً بواسطة وحدة `src/metrics.py` - مقرر البيانات الضخمة (جامعة الرازي)*

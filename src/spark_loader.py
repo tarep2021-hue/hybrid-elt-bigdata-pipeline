@@ -146,8 +146,11 @@ def _process_partition(partition_iter, run_id, file_name):
             }
             quarantine_batch.append(quarantine_doc)
             counts["quarantine"] += 1
-            for code in error_codes:
-                counts["errors"][code] = counts["errors"].get(code, 0) + 1
+            if "MULTIPLE_CONFLICTING_ERRORS" in error_codes or len(error_codes) > 1:
+                counts["errors"]["MULTIPLE_CONFLICTING_ERRORS"] = counts["errors"].get("MULTIPLE_CONFLICTING_ERRORS", 0) + 1
+            else:
+                for code in error_codes:
+                    counts["errors"][code] = counts["errors"].get(code, 0) + 1
         else:
             record["run_id"] = run_id
             record["validated_at"] = datetime.now(timezone.utc).isoformat()
