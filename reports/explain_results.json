@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-10-04T13:33:15Z",
+  "collection": "orders_validated",
+  "total_documents": 87312,
+  "queries_analyzed": 3,
+  "comparisons": [
+    {
+      "query_name": "orders_by_status_and_date",
+      "title": "استعلام الطلبات حسب الحالة والتاريخ",
+      "chosen_index": "idx_status_order_date",
+      "index_type": "Compound Index [status: 1, order_date: -1]",
+      "justification": "تحتاج طلبات المتجر اليومية إلى التصفية الدورية حسب الحالة ثم الترتيب الزمني العكسي. الفهرس المركب يطابق مبدأ Equality -> Sort -> Range (ESR)، مما يقضي تماماً على المسح الشامل (COLLSCAN) والفرز في الذاكرة (SORT stage).",
+      "impact_summary": "انخفض عدد المستندات المفحوصة من 87,312 إلى 50 مستند (توفير بنسبة 99.94%). تحولت آلية البحث من المسح الكامل للمجموعة (SORT) إلى فحص دقيق عبر الفهرس (LIMIT).",
+      "before": {
+        "stage": "SORT",
+        "execution_time_ms": 81,
+        "docs_examined": 87312,
+        "keys_examined": 0,
+        "n_returned": 50
+      },
+      "after": {
+        "stage": "LIMIT",
+        "execution_time_ms": 4,
+        "docs_examined": 50,
+        "keys_examined": 50,
+        "n_returned": 50,
+        "index_name": null
+      },
+      "metrics_comparison": {
+        "docs_reduction_pct": 99.94,
+        "speedup_factor": "20.25x"
+      }
+    },
+    {
+      "query_name": "customer_order_history",
+      "title": "استعلام سجل طلبات العميل برقم الهاتف",
+      "chosen_index": "idx_customer_phone",
+      "index_type": "Single Index [customer.phone: 1]",
+      "justification": "رقم الهاتف هو المعرّف الأكثر استخداماً من قبل موظفي خدمة العملاء والمندوبين. بدلاً من فحص عشرات الآلاف من السجلات للوصول للعميل، يتيح الفهرس الفردي قفزة B-Tree فورية بتعقيد O(log N).",
+      "impact_summary": "انخفض عدد المستندات المفحوصة من 87,312 إلى 1 مستند (توفير بنسبة 100.0%). تحولت آلية البحث من المسح الكامل للمجموعة (SORT) إلى فحص دقيق عبر الفهرس (SORT).",
+      "before": {
+        "stage": "SORT",
+        "execution_time_ms": 63,
+        "docs_examined": 87312,
+        "keys_examined": 0,
+        "n_returned": 1
+      },
+      "after": {
+        "stage": "SORT",
+        "execution_time_ms": 2,
+        "docs_examined": 1,
+        "keys_examined": 1,
+        "n_returned": 1,
+        "index_name": null
+      },
+      "metrics_comparison": {
+        "docs_reduction_pct": 100.0,
+        "speedup_factor": "31.5x"
+      }
+    },
+    {
+      "query_name": "high_value_orders_by_city",
+      "title": "استعلام الطلبات عالية القيمة في مدينة معينة",
+      "chosen_index": "idx_city_total_amount",
+      "index_type": "Compound Index [customer.address.city: 1, total_amount: -1]",
+      "justification": "تعتمد التقارير الإقليمية والتسويقية على استهداف الطلبات الكبيرة لكل مدينة. دمج المدينة مع قيمة المبلغ في فهرس مركب يسمح بالتصفية حسب المدينة ثم قراءة الطلبات مرتبة مباشرة من مؤشر الفهرس.",
+      "impact_summary": "انخفض عدد المستندات المفحوصة من 87,312 إلى 50 مستند (توفير بنسبة 99.94%). تحولت آلية البحث من المسح الكامل للمجموعة (SORT) إلى فحص دقيق عبر الفهرس (LIMIT).",
+      "before": {
+        "stage": "SORT",
+        "execution_time_ms": 67,
+        "docs_examined": 87312,
+        "keys_examined": 0,
+        "n_returned": 50
+      },
+      "after": {
+        "stage": "LIMIT",
+        "execution_time_ms": 2,
+        "docs_examined": 50,
+        "keys_examined": 50,
+        "n_returned": 50,
+        "index_name": null
+      },
+      "metrics_comparison": {
+        "docs_reduction_pct": 99.94,
+        "speedup_factor": "33.5x"
+      }
+    }
+  ]
+}
