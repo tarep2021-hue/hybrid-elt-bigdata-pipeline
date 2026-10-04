@@ -1,18 +1,21 @@
 @echo off
-chcp 65001 >nul
-title رفع المشروع إلى GitHub
+setlocal
+cd /d "%~dp0"
+set "PATH=C:\Program Files\Git\cmd;%PATH%"
+
 echo ========================================================
-echo   جارٍ رفع مشروع خط البيانات الهجين إلى GitHub...
+echo   Pushing Hybrid ELT Data Pipeline to GitHub...
 echo ========================================================
 echo.
 
-"C:\Program Files\Git\cmd\git.exe" remote set-url origin https://github.com/tarep2021-hue/hybrid-elt-bigdata-pipeline.git
-"C:\Program Files\Git\cmd\git.exe" add .
-"C:\Program Files\Git\cmd\git.exe" commit -m "Complete Hybrid ELT Big Data Pipeline: Phase 1 and Phase 2 with FastAPI, Indexes, Materialized Views"
-"C:\Program Files\Git\cmd\git.exe" push -u origin main
+git remote set-url origin https://github.com/tarep2021-hue/hybrid-elt-bigdata-pipeline.git
+git branch -M main
+git add .
+git commit -m "Complete Hybrid ELT Big Data Pipeline: Phase 1 & Phase 2"
+git push -u origin main
 
 echo.
 echo ========================================================
-echo   اكتملت العملية! اضغط أي مفتاح للإغلاق.
+echo   Process completed! Press any key to exit.
 echo ========================================================
 pause
