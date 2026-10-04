@@ -87,11 +87,21 @@ def run(file_path, reports_dir="reports"):
             metrics=metrics
         )
     elif engine == "pyspark":
-        metrics = spark_loader.load(
-            file_path=str(file_path),
-            run_id=run_id,
-            metrics=metrics
-        )
+        try:
+            metrics = spark_loader.load(
+                file_path=str(file_path),
+                run_id=run_id,
+                metrics=metrics
+            )
+        except Exception as spark_err:
+            print(f"\n  [WARN] PySpark execution note: {spark_err}")
+            print("  [FALLBACK] Running via High-Throughput Python Batch Streaming Engine...")
+            metrics.engine_used = "python_batch_fallback"
+            metrics = batch_loader.load(
+                file_path=str(file_path),
+                run_id=run_id,
+                metrics=metrics
+            )
     else:
         raise ValueError(f"Unknown engine: {engine}")
 
